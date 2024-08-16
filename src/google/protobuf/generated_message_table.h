@@ -1,8 +1,11 @@
 #ifndef GOOGLE_PROTOBUF_GENERATED_MESSAGE_TABLE_DECL_H__
 #define GOOGLE_PROTOBUF_GENERATED_MESSAGE_TABLE_DECL_H__
 
+#include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
+#include <type_traits>
 
 #include "absl/log/absl_check.h"
 
@@ -239,6 +242,212 @@ struct FieldEntry {
 };
 
 static_assert(sizeof(FieldEntry) == sizeof(uint64_t), "");
+
+// Table-driven serialization and ByteSizeLong have different interaction with
+// tables compared to table-driven parsing. While the latter walks wire-format
+// data and needs to cheaply find corresponding field entry, the former can
+// afford to just walk "all" present fields per message. To achieve maximum
+// efficiency, a dedicated table structure is used for serialization and
+// ByteSizeLong.
+//
+// Since messages have different shape (#fields, field types, etc.), the message
+// table must be generic enough to cover all types of messages. For example,
+// --extensions
+// --unknown fields
+// --singular, optional, repeated, map, oneof fields
+// --split fields (go/pdsplit)
+//
+// While rare, it also has to cover the following cases:
+// --huge number of fields (requires 32bit has_bit_index)
+// --huge field numbers (requires 32bit field_number)
+// --huge message size (requires 32bit offset)
+//
+// Generic tables consume bigger space not just in memory but in data cache. To
+// achieve minimum cache footprint in common cases, we rely on `AuxEntry` for
+// fully descriptive entries while `FieldEntry` is large enough for the common
+// cases. Extending this notion, some metadata about messages (MessageTableAux)
+// are isolated and often dropped when not needed. The following describes the
+// most generic table (MessageTable):
+//
+// template <size_t kNumFields, size_t kNumAux>
+// struct MessageTable {
+//   MessageTableBase header;
+//   std::array<FieldEntry, kNumFields> field_entries;
+//   MessageTableAux aux_header;
+//   std::array<AuxEntry, kNumAux> aux_entries;
+// };
+//
+// Note that "field_entries" are laid out in the following way (following the
+// way fields are laid out in messages):
+//
+// --repeated fields / singular / optional fields (non-split, non-oneof)
+// --split fields
+// --oneof fields
+//
+// If header.split_field_count > 0, the following needs to happen:
+// --Get split struct address from aux_header.split_offset.
+// --If the address is same as aux_header.default_split_instance, just skip.
+// --Otherwise, go through split field entries to handle present fields.
+//
+// If header.oneof_field_count > 0, the following needs to happen:
+// --Get oneof_case[] from aux_header.oneof_case_offset.
+// --Read field number from oneof_case[0].
+// --Find a corresponding FieldEntry with the field number.
+// --Repeat if there are more oneof cases.
+//
+// Note that FieldEntry tries to fit all required information into 64bit that
+// can support the following, which should be large enough for most messsages.
+// Otherwise, it falls back to AuxEntry:
+// --hasbit_index up to 256. (8bit)
+// --sizeof(Message) up to 64 KiB (16bit offset)
+// --field_number up to 2^16
+//
+// Note that std::array<T, 0> consumes sizeof(T) bytes, which unnecessarily
+// bloats cache footprint. We use a few specialized types to avoid such
+// overhead.
+//
+// For simple cases where no aux information is required, use
+// SimpleMessageTable.
+//
+// template <size_t kNumFields>
+// struct SimpleMessageTable {
+//   MessageTableBase header;
+//   std::array<FieldEntry, kNumFields> field_entries;
+// };
+//
+// Note that all fields must pack into FieldEntry and the message has no oneof
+// or split fields to be eligible.
+//
+// With oneof or split fields but all fields pack into FieldEntry, then the
+// following specialized type is used.
+//
+// template <size_t kNumFields>
+// struct MessageTable<kNumFields, 0> {
+//   MessageTableBase header;
+//   std::array<FieldEntry, kNumFields> field_entries;
+//   MessageTableAux aux_header;
+// }
+//
+// Note that we save 16 bytes by dropping `std::array<AuxEntry, 0>`. (12 bytes
+// plus padding bytes), which is non trivial.
+struct MessageTableAux {
+  uint32_t oneof_case_offset;
+  uint32_t split_offset;
+  void* default_split_instance;
+};
+
+struct AuxEntry {
+  uint32_t hasbit_index;
+  uint32_t field_number;
+  uint32_t offset;
+};
+
+struct MessageTableBase {
+  constexpr MessageTableBase(uint16_t has_bits_offset,
+                             uint16_t extension_offset, uint16_t field_count,
+                             uint16_t oneof_field_count,
+                             uint16_t split_field_count,
+                             uint16_t oneof_case_count, uint32_t aux_offset)
+      : has_bits_offset(has_bits_offset),
+        extension_offset(extension_offset),
+        field_count(field_count),
+        oneof_field_count(oneof_field_count),
+        split_field_count(split_field_count),
+        oneof_case_count(oneof_case_count),
+        aux_offset(aux_offset) {}
+
+  // "field_entry" is immediately after `MessageTableBase` without padding bytes
+  // whose offset is statically known.
+  const FieldEntry* field_entry(size_t idx) const {
+    ABSL_DCHECK_NE(field_count + oneof_field_count + split_field_count, 0u);
+    return reinterpret_cast<const FieldEntry*>(this + 1) + idx;
+  }
+  FieldEntry* field_entry(size_t idx) {
+    ABSL_DCHECK_NE(field_count + oneof_field_count + split_field_count, 0u);
+    return reinterpret_cast<FieldEntry*>(this + 1) + idx;
+  }
+
+  // "aux_header" is after "field_entry" whose size is variable. Use cached
+  // "aux_offset" to locate the field.
+  const MessageTableAux* aux_header() const {
+    ABSL_DCHECK_NE(aux_offset, 0u);
+    return reinterpret_cast<const MessageTableAux*>(PtrAt(this, aux_offset));
+  }
+  MessageTableAux* aux_header() {
+    ABSL_DCHECK_NE(aux_offset, 0u);
+    return reinterpret_cast<MessageTableAux*>(PtrAt(this, aux_offset));
+  }
+
+  // "aux_entry" is after "aux_header" without padding bytes whose size is
+  // statically known. Instead of caching, we use "aux_offset". This is
+  // acceptable because there is no padding bytes between the two.
+  const AuxEntry* aux_entry(size_t idx) const {
+    ABSL_DCHECK_NE(aux_offset, 0u);
+    return reinterpret_cast<const AuxEntry*>(
+               PtrAt(this, aux_offset + sizeof(MessageTableAux))) +
+           idx;
+  }
+  AuxEntry* aux_entry(size_t idx) {
+    ABSL_DCHECK_NE(aux_offset, 0u);
+    return reinterpret_cast<AuxEntry*>(
+               PtrAt(this, aux_offset + sizeof(MessageTableAux))) +
+           idx;
+  }
+
+  static uintptr_t PtrAt(const void* ptr, size_t offset) {
+    return reinterpret_cast<uintptr_t>(ptr) + offset;
+  }
+
+  uint16_t has_bits_offset;
+  uint16_t extension_offset;
+
+  uint16_t field_count;
+  uint16_t oneof_field_count;
+  uint16_t split_field_count;
+
+  // Could've been moved to MessageTableAux but why don't we make good use of
+  // otherwise wasted padding bytes?
+  uint16_t oneof_case_count;
+  uint32_t aux_offset;
+};
+
+static_assert(sizeof(MessageTableBase) == 16, "");
+
+// In most common cases, SimpleMessageTable should suffice, which is the most
+// compact form.
+template <size_t kNumFields>
+struct SimpleMessageTable {
+
+  MessageTableBase header;
+  std::array<FieldEntry, kNumFields> field_entries;
+};
+
+template <size_t kNumFields, size_t kNumAux>
+struct MessageTable {
+
+  MessageTableBase header;
+  std::array<FieldEntry, kNumFields> field_entries;
+  MessageTableAux aux_header;
+  std::array<AuxEntry, kNumAux> aux_entries;
+};
+
+template <size_t kNumFields>
+struct MessageTable<kNumFields, 0> {
+
+  MessageTableBase header;
+  std::array<FieldEntry, kNumFields> field_entries;
+  MessageTableAux aux_header;
+};
+
+template <>
+struct MessageTable<0, 0> {
+  MessageTableBase header;
+};
+
+constexpr MessageTable<0, 0> kEmptyMessageTable = {
+    {/*has_bits_offset*/ 0, /*extension_offset*/ 0, /*field_count*/ 0,
+     /*oneof_field_count*/ 0, /*split_field_count*/ 0, /*oneof_case_count*/ 0,
+     /*aux_offset*/ 0}};
 
 }  // namespace v2
 }  // namespace internal
