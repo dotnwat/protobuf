@@ -16,13 +16,50 @@ package com.google.protobuf;
  */
 @Deprecated
 public class SingleFieldBuilderV3<
-        MType extends GeneratedMessage,
-        BType extends GeneratedMessage.Builder,
+        MType extends AbstractMessage,
+        BType extends AbstractMessage.Builder,
         IType extends MessageOrBuilder>
     extends SingleFieldBuilder<MType, BType, IType> {
 
   public SingleFieldBuilderV3(
-      MType message, GeneratedMessage.BuilderParent parent, boolean isClean) {
+      MType message, AbstractMessage.BuilderParent parent, boolean isClean) {
     super(message, parent, isClean);
+  }
+
+  /* Returns SingleFieldBuilderV3 instead of SingleFieldBuilder.
+   *
+   * @deprecated This method is deprecated, and slated for removal in the next Java breaking change
+   * (5.x). Users should update gencode to >= 4.26.x which uses
+   * SingleFieldBuilder.setMessage() instead.
+   */
+  @Deprecated
+  @Override
+  public SingleFieldBuilderV3<MType, BType, IType> setMessage(MType message) {
+    super.setMessage(message);
+    return this;
+  }
+
+  /* Returns SingleFieldBuilderV3 instead of SingleFieldBuilder.
+   *
+   * @deprecated This method is deprecated, and slated for removal in the next Java breaking change
+   * (5.x). Users should update gencode to >= 4.26.x which uses
+   * SingleFieldBuilder.mergeFrom() instead.
+   */
+  @Deprecated
+  @Override
+  public SingleFieldBuilderV3<MType, BType, IType> mergeFrom(MType value) {
+    return (SingleFieldBuilderV3<MType, BType, IType>) super.mergeFrom(value);
+  }
+
+  /* Returns SingleFieldBuilderV3 instead of SingleFieldBuilder.
+   *
+   * @deprecated This method is deprecated, and slated for removal in the next Java breaking change
+   * (5.x). Users should update gencode to >= 4.26.x which uses
+   * SingleFieldBuilder.clear() instead.
+   */
+  @Deprecated
+  @Override
+  public SingleFieldBuilderV3<MType, BType, IType> clear() {
+    return (SingleFieldBuilderV3<MType, BType, IType>) super.clear();
   }
 }

@@ -383,7 +383,7 @@ protobuf_java_library(
         "src/test/java/com/google/protobuf/TestUtil.java",
         "src/test/java/com/google/protobuf/TestUtilLite.java",
     ],
-    visibility = ["//java:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":core",
         ":generic_test_protos_java_proto",

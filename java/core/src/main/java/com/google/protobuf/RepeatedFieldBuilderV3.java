@@ -19,16 +19,59 @@ import java.util.List;
  */
 @Deprecated
 public class RepeatedFieldBuilderV3<
-        MType extends GeneratedMessage,
-        BType extends GeneratedMessage.Builder,
+        MType extends AbstractMessage,
+        BType extends AbstractMessage.Builder,
         IType extends MessageOrBuilder>
     extends RepeatedFieldBuilder<MType, BType, IType> {
 
   public RepeatedFieldBuilderV3(
       List<MType> messages,
       boolean isMessagesListMutable,
-      GeneratedMessage.BuilderParent parent,
+      AbstractMessage.BuilderParent parent,
       boolean isClean) {
     super(messages, isMessagesListMutable, parent, isClean);
+  }
+
+  /* Returns RepeatedFieldBuilderV3 instead of RepeatedFieldBuilder.
+   *
+   * @deprecated This method is deprecated, and slated for removal in the next Java breaking change
+   * (5.x). Users should update gencode to >= 4.26.x which uses
+   * RepeatedFieldBuilder.setMessage() instead.
+   */
+  @Deprecated
+  @Override
+  public RepeatedFieldBuilderV3<MType, BType, IType> setMessage(int index, MType message) {
+    return (RepeatedFieldBuilderV3<MType, BType, IType>) super.setMessage(index, message);
+  }
+
+  /* Returns RepeatedFieldBuilderV3 instead of RepeatedFieldBuilder.
+   *
+   * @deprecated This method is deprecated, and slated for removal in the next Java breaking change
+   * (5.x). Users should update gencode to >= 4.26.x which uses
+   * RepeatedFieldBuilder.addMessage() instead.
+   */
+  public RepeatedFieldBuilderV3<MType, BType, IType> addMessage(MType message) {
+    return (RepeatedFieldBuilderV3<MType, BType, IType>) super.addMessage(message);
+  }
+
+  /* Returns RepeatedFieldBuilderV3 instead of RepeatedFieldBuilder.
+   *
+   * @deprecated This method is deprecated, and slated for removal in the next Java breaking change
+   * (5.x). Users should update gencode to >= 4.26.x which uses
+   * RepeatedFieldBuilder.addMessage() instead.
+   */
+  public RepeatedFieldBuilderV3<MType, BType, IType> addMessage(int index, MType message) {
+    return (RepeatedFieldBuilderV3<MType, BType, IType>) super.addMessage(index, message);
+  }
+
+  /* Returns RepeatedFieldBuilderV3 instead of RepeatedFieldBuilder.
+   *
+   * @deprecated This method is deprecated, and slated for removal in the next Java breaking change
+   * (5.x). Users should update gencode to >= 4.26.x which uses
+   * RepeatedFieldBuilder.addAllMessages() instead.
+   */
+  public RepeatedFieldBuilderV3<MType, BType, IType> addAllMessages(
+      Iterable<? extends MType> values) {
+    return (RepeatedFieldBuilderV3<MType, BType, IType>) super.addAllMessages(values);
   }
 }
