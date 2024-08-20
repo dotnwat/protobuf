@@ -37,7 +37,6 @@ using hpb::HasExtension;
 using hpb::SetExtension;
 
 using hpb::Arena;
-using hpb::MessageAllocationError;
 using hpb::Ptr;
 }  // namespace protos
 #endif
